@@ -1,0 +1,17 @@
+{
+  "functions": {
+    "api/github-update.js": {
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/switch",
+      "destination": "/switch.html"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}
