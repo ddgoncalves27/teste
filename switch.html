@@ -500,12 +500,14 @@
             showMessage('Updating GitHub...', 'success');
 
             try {
+                // Always fetch the latest file to get current SHA
                 const getResponse = await fetch(
-                    `https://api.github.com/repos/${config.username}/${config.repo}/contents/index.html?ref=${config.branch}`,
+                    `https://api.github.com/repos/${config.username}/${config.repo}/contents/index.html?ref=${config.branch}&timestamp=${Date.now()}`,
                     {
                         headers: {
                             'Authorization': `token ${config.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Cache-Control': 'no-cache'
                         }
                     }
                 );
@@ -515,18 +517,22 @@
                 }
 
                 const getData = await getResponse.json();
+                const currentSha = getData.sha;
                 const content = atob(getData.content);
 
+                // Create new DISABLED_PAGES array
                 const newArray = disabledPages.length > 0 
                     ? disabledPages.map(p => `'${p}'`).join(',\n            ')
                     : '';
                 const newArrayString = `const DISABLED_PAGES = [\n            ${newArray}\n        ];`;
 
+                // Replace in content
                 const newContent = content.replace(
                     /const DISABLED_PAGES = \[([\s\S]*?)\];/,
                     newArrayString
                 );
 
+                // Update file on GitHub with the current SHA
                 const updateResponse = await fetch(
                     `https://api.github.com/repos/${config.username}/${config.repo}/contents/index.html`,
                     {
@@ -539,7 +545,7 @@
                         body: JSON.stringify({
                             message: `Update disabled pages: ${disabledPages.join(', ') || 'none'}`,
                             content: btoa(newContent),
-                            sha: getData.sha,
+                            sha: currentSha, // Use the SHA we just fetched
                             branch: config.branch
                         })
                     }
@@ -547,13 +553,21 @@
 
                 if (!updateResponse.ok) {
                     const errorData = await updateResponse.json();
+                    if (errorData.message && errorData.message.includes('does not match')) {
+                        throw new Error('File was modified by another process. Please refresh and try again.');
+                    }
                     throw new Error(errorData.message || 'Failed to update file');
                 }
 
                 showMessage('✅ Updated successfully! Changes will be live in 1-2 minutes.', 'success');
+                
+                // Refresh the page list to ensure we're in sync
+                setTimeout(connectToGitHub, 1000);
 
             } catch (error) {
                 showError('Failed to update: ' + error.message);
+                // Refresh to get latest state
+                setTimeout(connectToGitHub, 2000);
             }
         }
 
