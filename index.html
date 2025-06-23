@@ -560,35 +560,30 @@
     </div>
 
     <script>
-        // REPLACE THIS WITH YOUR JSONBIN.IO DETAILS
-        const JSONBIN_BIN_ID = 'YOUR_BIN_ID_HERE'; // You'll get this after creating a bin
-        const JSONBIN_API_KEY = '$2b$10$YOUR_API_KEY_HERE'; // Your JSONBin API key
+        // MASTER CONTROL LIST - Update this on GitHub to control all pages
+        const DISABLED_PAGES = [
+            // Add page paths here to disable them globally
+            // Example: 'ain', 'test', 'promo1'
+        ];
         
         // Check if page should be displayed
-        async function checkPageControl() {
-            const pathname = window.location.pathname.replace(/^\//, '');
+        function checkPageControl() {
+            const pathname = window.location.pathname.replace(/^\//, '').toLowerCase();
             
-            try {
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-                    headers: {
-                        'X-Access-Key': JSONBIN_API_KEY
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const controls = data.record || {};
-                    const pageStatus = controls[pathname];
-                    
-                    if (pageStatus === false) {
-                        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;color:#888;font-family:Arial;"><h1>Page Temporarily Unavailable</h1></div>';
-                        return false;
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to check page control:', error);
-                // If check fails, show page normally
+            // Check URL parameter override (for testing)
+            const urlParams = new URLSearchParams(window.location.search);
+            const forceShow = urlParams.get('show');
+            
+            if (forceShow === 'true') {
+                return true; // Force show the page
             }
+            
+            // Check if this page is in the disabled list
+            if (DISABLED_PAGES.includes(pathname)) {
+                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;color:#888;font-family:Arial;"><h1>Page Temporarily Unavailable</h1></div>';
+                return false;
+            }
+            
             return true;
         }
 
