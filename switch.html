@@ -36,12 +36,81 @@
             font-size: 14px;
         }
 
+        .setup-box {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .setup-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fbbf24;
+            margin-bottom: 15px;
+        }
+
+        .token-input-group {
+            margin-bottom: 15px;
+        }
+
+        .token-label {
+            display: block;
+            font-size: 14px;
+            color: #fef3c7;
+            margin-bottom: 8px;
+        }
+
+        .token-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .token-input:focus {
+            outline: none;
+            border-color: #fbbf24;
+        }
+
+        .connect-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .connect-btn:hover {
+            background: #2563eb;
+        }
+
+        .connect-btn:disabled {
+            background: #4a4a4a;
+            cursor: not-allowed;
+        }
+
         .control-box {
             background: #2a2a2a;
             border-radius: 12px;
             padding: 30px;
             margin-bottom: 30px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+
+        .control-box.active {
+            display: block;
         }
 
         .pages-list {
@@ -242,17 +311,27 @@
             color: #ff6b6b;
         }
 
-        .token-warning {
-            background: rgba(251, 191, 36, 0.1);
-            border: 1px solid rgba(251, 191, 36, 0.3);
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        .config-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 20px;
-            color: #fbbf24;
-            font-size: 14px;
         }
 
-        .token-warning code {
+        .config-info p {
+            color: #93bbfb;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .config-info code {
             background: rgba(0,0,0,0.3);
             padding: 2px 6px;
             border-radius: 4px;
@@ -268,7 +347,28 @@
         <div class="success-message" id="successMessage"></div>
         <div class="error-message" id="errorMessage"></div>
 
-        <div class="control-box">
+        <div class="config-info">
+            <p><strong>Repository:</strong> <code>ddgoncalves27/teste</code></p>
+            <p><strong>Branch:</strong> <code>main</code></p>
+        </div>
+
+        <div class="setup-box">
+            <div class="setup-title">Enter Your GitHub Token</div>
+            <div class="token-input-group">
+                <label class="token-label" for="githubToken">GitHub Personal Access Token:</label>
+                <input 
+                    type="password" 
+                    id="githubToken" 
+                    class="token-input" 
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    value=""
+                >
+                <p class="help-text">Your token needs 'repo' permissions. <a href="https://github.com/settings/tokens" target="_blank" style="color: #fbbf24;">Get a token</a></p>
+            </div>
+            <button class="connect-btn" onclick="connectWithToken()">Connect to GitHub</button>
+        </div>
+
+        <div class="control-box" id="controlBox">
             <div class="add-page-box">
                 <div class="add-page-title">Add New Page to Control</div>
                 <div class="add-page-form">
@@ -278,24 +378,43 @@
             </div>
 
             <div class="pages-list" id="pagesList">
-                <div class="empty-state">Connecting to GitHub...</div>
+                <div class="empty-state">Loading pages...</div>
             </div>
         </div>
     </div>
 
     <script>
-        // CONFIGURATION - Replace the token!
+        // Configuration (token will be added from input)
         const config = {
             username: 'ddgoncalves27',
             repo: 'teste',
-            token: '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',
+            token: '', // Will be filled from input
             branch: 'main'
         };
 
         let disabledPages = [];
 
+        // Connect with token from input
+        function connectWithToken() {
+            const tokenInput = document.getElementById('githubToken');
+            const token = tokenInput.value.trim();
+            
+            if (!token) {
+                showError('Please enter your GitHub token');
+                return;
+            }
+            
+            config.token = token;
+            localStorage.setItem('githubToken', token); // Save for convenience
+            connectToGitHub();
+        }
+
         async function connectToGitHub() {
             showMessage('Connecting to GitHub...', 'success');
+            
+            const button = document.querySelector('.connect-btn');
+            button.disabled = true;
+            button.textContent = 'Connecting...';
 
             try {
                 const response = await fetch(
@@ -312,26 +431,33 @@
                     if (response.status === 401) {
                         throw new Error('Invalid token. Please check your GitHub token.');
                     } else if (response.status === 404) {
-                        throw new Error('Repository or file not found. Check username/repo.');
+                        throw new Error('Repository or file not found. Make sure index.html exists.');
                     }
                     throw new Error('Failed to connect to GitHub.');
                 }
 
                 const data = await response.json();
                 const content = atob(data.content);
+                
+                // Check if DISABLED_PAGES exists
                 const match = content.match(/const DISABLED_PAGES = \[([\s\S]*?)\];/);
-                if (match) {
-                    const arrayContent = match[1];
-                    const pages = arrayContent.match(/'([^']+)'/g) || [];
-                    disabledPages = pages.map(p => p.replace(/'/g, ''));
+                if (!match) {
+                    throw new Error('DISABLED_PAGES not found in index.html. Make sure you\'re using the correct index.html version.');
                 }
+                
+                const arrayContent = match[1];
+                const pages = arrayContent.match(/'([^']+)'/g) || [];
+                disabledPages = pages.map(p => p.replace(/'/g, ''));
 
                 showMessage('Connected to GitHub successfully!', 'success');
+                document.querySelector('.setup-box').style.display = 'none';
+                document.getElementById('controlBox').classList.add('active');
                 updatePagesList();
 
             } catch (error) {
                 showError(error.message);
-                document.getElementById('pagesList').innerHTML = `<div class="empty-state">❌ ${error.message}</div>`;
+                button.disabled = false;
+                button.textContent = 'Connect to GitHub';
             }
         }
 
@@ -501,11 +627,20 @@
             }, 5000);
         }
 
+        // Load saved token on startup
         document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(connectToGitHub, 500);
-        });
-
-        document.addEventListener('DOMContentLoaded', function() {
+            const savedToken = localStorage.getItem('githubToken');
+            if (savedToken) {
+                document.getElementById('githubToken').value = savedToken;
+            }
+            
+            // Enter key support
+            document.getElementById('githubToken').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    connectWithToken();
+                }
+            });
+            
             document.getElementById('newPagePath').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     addPage();
