@@ -1,12 +1,14 @@
 {
-  "rewrites": [
+  "headers": [
     {
-      "source": "/switch",
-      "destination": "/switch.html"
-    },
-    {
-      "source": "/:path*",
-      "destination": "/index.html"
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
     }
+  ],
+  "rewrites": [
+    { "source": "/switch", "destination": "/switch.html" },
+    { "source": "/:path*", "destination": "/index.html" }
   ]
 }
