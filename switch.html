@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Panel - GitHub Auto Update</title>
+    <title>Control Panel - Vercel API</title>
     <style>
         * {
             margin: 0;
@@ -342,7 +342,7 @@
 <body>
     <div class="container">
         <h1>GitHub Landing Page Control</h1>
-        <p class="subtitle">Control your pages by auto-updating GitHub</p>
+        <p class="subtitle">Control your pages through Vercel API</p>
 
         <div class="success-message" id="successMessage"></div>
         <div class="error-message" id="errorMessage"></div>
@@ -350,6 +350,7 @@
         <div class="config-info">
             <p><strong>Repository:</strong> <code>ddgoncalves27/teste</code></p>
             <p><strong>Branch:</strong> <code>main</code></p>
+            <p><strong>API:</strong> <code>/api/github-update</code></p>
         </div>
 
         <div class="setup-box">
@@ -384,18 +385,12 @@
     </div>
 
     <script>
-        // Configuration (token will be added from input)
-        const config = {
-            username: 'ddgoncalves27',
-            repo: 'teste',
-            token: '', // Will be filled from input
-            branch: 'main'
-        };
-
+        // Configuration
+        let githubToken = '';
         let disabledPages = [];
 
         // Connect with token from input
-        function connectWithToken() {
+        async function connectWithToken() {
             const tokenInput = document.getElementById('githubToken');
             const token = tokenInput.value.trim();
             
@@ -404,24 +399,25 @@
                 return;
             }
             
-            config.token = token;
+            githubToken = token;
             localStorage.setItem('githubToken', token); // Save for convenience
-            connectToGitHub();
+            await loadCurrentPages();
         }
 
-        async function connectToGitHub() {
-            showMessage('Connecting to GitHub...', 'success');
+        async function loadCurrentPages() {
+            showMessage('Loading current configuration...', 'success');
             
             const button = document.querySelector('.connect-btn');
             button.disabled = true;
-            button.textContent = 'Connecting...';
+            button.textContent = 'Loading...';
 
             try {
+                // Get current index.html to read DISABLED_PAGES
                 const response = await fetch(
-                    `https://api.github.com/repos/${config.username}/${config.repo}/contents/index.html?ref=${config.branch}`,
+                    'https://api.github.com/repos/ddgoncalves27/teste/contents/index.html?ref=main',
                     {
                         headers: {
-                            'Authorization': `token ${config.token}`,
+                            'Authorization': `Bearer ${githubToken}`,
                             'Accept': 'application/vnd.github.v3+json'
                         }
                     }
@@ -439,7 +435,7 @@
                 const data = await response.json();
                 const content = atob(data.content);
                 
-                // Check if DISABLED_PAGES exists
+                // Extract DISABLED_PAGES
                 const match = content.match(/const DISABLED_PAGES = \[([\s\S]*?)\];/);
                 if (!match) {
                     throw new Error('DISABLED_PAGES not found in index.html. Make sure you\'re using the correct index.html version.');
@@ -449,7 +445,7 @@
                 const pages = arrayContent.match(/'([^']+)'/g) || [];
                 disabledPages = pages.map(p => p.replace(/'/g, ''));
 
-                showMessage('Connected to GitHub successfully!', 'success');
+                showMessage('Connected successfully!', 'success');
                 document.querySelector('.setup-box').style.display = 'none';
                 document.getElementById('controlBox').classList.add('active');
                 updatePagesList();
@@ -500,74 +496,33 @@
             showMessage('Updating GitHub...', 'success');
 
             try {
-                // Always fetch the latest file to get current SHA
-                const getResponse = await fetch(
-                    `https://api.github.com/repos/${config.username}/${config.repo}/contents/index.html?ref=${config.branch}&timestamp=${Date.now()}`,
-                    {
-                        headers: {
-                            'Authorization': `token ${config.token}`,
-                            'Accept': 'application/vnd.github.v3+json',
-                            'Cache-Control': 'no-cache'
-                        }
-                    }
-                );
+                // Call our Vercel API endpoint
+                const response = await fetch('/api/github-update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'update',
+                        pages: disabledPages,
+                        token: githubToken
+                    })
+                });
 
-                if (!getResponse.ok) {
-                    throw new Error('Failed to get current file');
-                }
-
-                const getData = await getResponse.json();
-                const currentSha = getData.sha;
-                const content = atob(getData.content);
-
-                // Create new DISABLED_PAGES array
-                const newArray = disabledPages.length > 0 
-                    ? disabledPages.map(p => `'${p}'`).join(',\n            ')
-                    : '';
-                const newArrayString = `const DISABLED_PAGES = [\n            ${newArray}\n        ];`;
-
-                // Replace in content
-                const newContent = content.replace(
-                    /const DISABLED_PAGES = \[([\s\S]*?)\];/,
-                    newArrayString
-                );
-
-                // Update file on GitHub with the current SHA
-                const updateResponse = await fetch(
-                    `https://api.github.com/repos/${config.username}/${config.repo}/contents/index.html`,
-                    {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `token ${config.token}`,
-                            'Accept': 'application/vnd.github.v3+json',
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            message: `Update disabled pages: ${disabledPages.join(', ') || 'none'}`,
-                            content: btoa(newContent),
-                            sha: currentSha, // Use the SHA we just fetched
-                            branch: config.branch
-                        })
-                    }
-                );
-
-                if (!updateResponse.ok) {
-                    const errorData = await updateResponse.json();
-                    if (errorData.message && errorData.message.includes('does not match')) {
-                        throw new Error('File was modified by another process. Please refresh and try again.');
-                    }
-                    throw new Error(errorData.message || 'Failed to update file');
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to update');
                 }
 
                 showMessage('✅ Updated successfully! Changes will be live in 1-2 minutes.', 'success');
                 
-                // Refresh the page list to ensure we're in sync
-                setTimeout(connectToGitHub, 1000);
+                // Reload to ensure we're in sync
+                setTimeout(loadCurrentPages, 1000);
 
             } catch (error) {
                 showError('Failed to update: ' + error.message);
                 // Refresh to get latest state
-                setTimeout(connectToGitHub, 2000);
+                setTimeout(loadCurrentPages, 2000);
             }
         }
 
