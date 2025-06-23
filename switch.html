@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Panel - Vercel API</title>
+    <title>Control Panel - GitHub Auto Update</title>
     <style>
         * {
             margin: 0;
@@ -115,6 +115,15 @@
 
         .pages-list {
             margin-top: 30px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ddd;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #3a3a3a;
         }
 
         .page-item {
@@ -388,6 +397,8 @@
         // Configuration
         let githubToken = '';
         let disabledPages = [];
+        let allPages = []; // Track all pages we manage
+        let isUpdating = false; // Prevent concurrent updates
 
         // Connect with token from input
         async function connectWithToken() {
@@ -445,6 +456,23 @@
                 const pages = arrayContent.match(/'([^']+)'/g) || [];
                 disabledPages = pages.map(p => p.replace(/'/g, ''));
 
+                // Get all pages from localStorage or use disabled pages as starting point
+                const storedPages = localStorage.getItem('allManagedPages');
+                if (storedPages) {
+                    allPages = JSON.parse(storedPages);
+                    // Add any disabled pages that aren't in our list
+                    disabledPages.forEach(page => {
+                        if (!allPages.includes(page)) {
+                            allPages.push(page);
+                        }
+                    });
+                } else {
+                    allPages = [...disabledPages];
+                }
+                
+                // Save updated list
+                localStorage.setItem('allManagedPages', JSON.stringify(allPages));
+
                 showMessage('Connected successfully!', 'success');
                 document.querySelector('.setup-box').style.display = 'none';
                 document.getElementById('controlBox').classList.add('active');
@@ -460,42 +488,74 @@
         function updatePagesList() {
             const pagesList = document.getElementById('pagesList');
 
-            if (disabledPages.length === 0) {
-                pagesList.innerHTML = '<div class="empty-state">No disabled pages yet. Add a page path above to disable it!</div>';
+            if (allPages.length === 0) {
+                pagesList.innerHTML = '<div class="empty-state">No pages being controlled yet. Add a page path above!</div>';
                 return;
             }
 
             pagesList.innerHTML = '';
 
-            disabledPages.forEach(path => {
-                const pageItem = createPageItem(path, false);
-                pagesList.appendChild(pageItem);
-            });
+            // Show enabled pages
+            const enabledPages = allPages.filter(p => !disabledPages.includes(p));
+            if (enabledPages.length > 0) {
+                const enabledSection = document.createElement('div');
+                enabledSection.innerHTML = '<div class="section-title">Active Pages</div>';
+                enabledPages.forEach(path => {
+                    const pageItem = createPageItem(path, true);
+                    enabledSection.appendChild(pageItem);
+                });
+                pagesList.appendChild(enabledSection);
+            }
+
+            // Show disabled pages
+            if (disabledPages.length > 0) {
+                const disabledSection = document.createElement('div');
+                disabledSection.innerHTML = '<div class="section-title">Disabled Pages</div>';
+                disabledPages.forEach(path => {
+                    const pageItem = createPageItem(path, false);
+                    disabledSection.appendChild(pageItem);
+                });
+                pagesList.appendChild(disabledSection);
+            }
         }
 
         function createPageItem(path, isActive) {
             const div = document.createElement('div');
             div.className = 'page-item';
+            div.id = `page-${path}`;
             div.innerHTML = `
                 <div class="page-info">
                     <div class="page-path">/${path}</div>
-                    <div class="page-status ${isActive ? 'active' : 'inactive'}">${isActive ? 'ACTIVE' : 'INACTIVE'}</div>
+                    <div class="page-status ${isActive ? 'active' : 'inactive'}">${isActive ? 'ACTIVE' : 'DISABLED'}</div>
                 </div>
                 <div style="display: flex; align-items: center;">
                     <label class="toggle-switch">
-                        <input type="checkbox" ${isActive ? 'checked' : ''} onchange="togglePage('${path}', this.checked)">
+                        <input type="checkbox" ${isActive ? 'checked' : ''} onchange="togglePage('${path}', this.checked)" ${isUpdating ? 'disabled' : ''}>
                         <span class="toggle-slider"></span>
                     </label>
-                    <button class="delete-btn" onclick="deletePage('${path}')">Delete</button>
+                    <button class="delete-btn" onclick="deletePage('${path}')" ${isUpdating ? 'disabled' : ''}>Delete</button>
                 </div>
             `;
             return div;
         }
 
         async function updateGitHubFile() {
+            if (isUpdating) {
+                console.log('Already updating, skipping...');
+                return;
+            }
+
+            isUpdating = true;
             showMessage('Updating GitHub...', 'success');
 
             try {
+                // Disable all inputs during update
+                document.querySelectorAll('input[type="checkbox"], button').forEach(el => {
+                    if (!el.classList.contains('connect-btn')) {
+                        el.disabled = true;
+                    }
+                });
+
                 // Call our Vercel API endpoint
                 const response = await fetch('/api/github-update', {
                     method: 'POST',
@@ -514,15 +574,22 @@
                     throw new Error(error.error || 'Failed to update');
                 }
 
+                const result = await response.json();
                 showMessage('✅ Updated successfully! Changes will be live in 1-2 minutes.', 'success');
                 
-                // Reload to ensure we're in sync
-                setTimeout(loadCurrentPages, 1000);
+                // Save the current state
+                localStorage.setItem('allManagedPages', JSON.stringify(allPages));
 
             } catch (error) {
                 showError('Failed to update: ' + error.message);
-                // Refresh to get latest state
+                // Reload to get current state
                 setTimeout(loadCurrentPages, 2000);
+            } finally {
+                isUpdating = false;
+                // Re-enable inputs
+                document.querySelectorAll('input[type="checkbox"], button').forEach(el => {
+                    el.disabled = false;
+                });
             }
         }
 
@@ -535,38 +602,60 @@
                 return;
             }
 
-            if (disabledPages.includes(path)) {
-                showError('Page already exists in disabled list');
+            if (allPages.includes(path)) {
+                showError('This page is already being controlled');
                 return;
             }
 
-            disabledPages.push(path);
+            // Add to all pages list (enabled by default)
+            allPages.push(path);
             input.value = '';
 
+            // Update display
             updatePagesList();
-            await updateGitHubFile();
+            
+            // Save locally
+            localStorage.setItem('allManagedPages', JSON.stringify(allPages));
+            
+            // Note: We don't update GitHub here since the page is enabled by default
+            showMessage(`✅ Added "${path}" as an active page`, 'success');
         }
 
-        async function togglePage(path, isActive) {
-            if (isActive) {
+        async function togglePage(path, isEnabled) {
+            console.log(`Toggling ${path} to ${isEnabled ? 'enabled' : 'disabled'}`);
+            
+            if (isEnabled) {
+                // Remove from disabled pages
                 disabledPages = disabledPages.filter(p => p !== path);
             } else {
+                // Add to disabled pages
                 if (!disabledPages.includes(path)) {
                     disabledPages.push(path);
                 }
             }
 
-            updatePagesList();
             await updateGitHubFile();
+            
+            // Update display immediately
+            updatePagesList();
         }
 
         async function deletePage(path) {
-            if (!confirm(`Remove "${path}" from control? The page will be enabled again.`)) {
+            if (!confirm(`Remove "${path}" from control?\n\nThis will enable the page and remove it from your control panel.`)) {
                 return;
             }
 
+            // Remove from all lists
+            allPages = allPages.filter(p => p !== path);
             disabledPages = disabledPages.filter(p => p !== path);
+            
+            // Save locally
+            localStorage.setItem('allManagedPages', JSON.stringify(allPages));
+            
+            // Update display
             updatePagesList();
+            
+            // Update GitHub
             await updateGitHubFile();
         }
 
