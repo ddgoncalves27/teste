@@ -1,0 +1,13 @@
+// vercel.json
+{
+  "rewrites": [
+    {
+      "source": "/switch",
+      "destination": "/switch.html"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}
